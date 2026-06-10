@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>한글 악보 생성기</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+<script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #ffffff;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 2rem 1rem;
+  }
+  .container { width: 100%; max-width: 760px; }
+  h1 { font-size: 22px; font-weight: 500; color: #1a1a1a; margin-bottom: 4px; }
+  .sub { font-size: 13px; color: #888; margin-bottom: 1.5rem; }
+  .input-area {
+    background: #fff; border: 1px solid #e0ddd6;
+    border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem;
+  }
+  textarea {
+    width: 100%; height: 72px; font-size: 22px;
+    border: 1px solid #e0ddd6; border-radius: 8px;
+    padding: 10px 14px; background: #fafaf8; color: #1a1a1a;
+    font-family: 'Pretendard', inherit; resize: none; outline: none; letter-spacing: 2px;
+  }
+  textarea:focus { border-color: #aaa; background: #fff; }
+  .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+  button {
+    padding: 8px 20px; font-size: 14px;
+    border: 1px solid #d0cdc6; border-radius: 8px;
+    background: transparent; color: #1a1a1a; cursor: pointer;
+    font-family: 'Pretendard', inherit;
+  }
+  button:hover { background: #f0ede8; }
+  button.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  button.primary:hover { background: #333; }
+  .score-wrap {
+    background: #fff; border: 1px solid #e0ddd6; border-radius: 12px;
+    padding: 1.5rem 1rem; margin-bottom: 1rem; min-height: 140px;
+  }
+  .empty-msg { text-align: center; color: #bbb; font-size: 14px; padding: 2rem 0; }
+  #vf-output svg { display: block; width: 100% !important; height: auto !important; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>한글 악보 생성기</h1>
+  <p class="sub">@saerosr</p>
+
+  <div class="input-area">
+    <textarea id="inp" placeholder="예: 강산 바다 하늘 ㄱㄴㄷ ㅏㅑㅓ" autofocus></textarea>
+    <div class="btn-row">
+      <button class="primary" onclick="render()">악보 생성</button>
+      <button onclick="document.getElementById('inp').value='';clearScore()">초기화</button>
+    </div>
+  </div>
+
+  <div class="score-wrap">
+    <div id="vf-output"><p class="empty-msg">위에 입력하면 악보가 나타납니다</p></div>
+  </div>
+  <p id="save-tip" style="display:none; font-size:12px; color:#aaa; text-align:center; margin-top:-0.5rem; margin-bottom:1rem;">악보 위에서 우클릭 → 이미지 저장</p>
+</div>
+
+<script>
+const CONS_MAP = {
+  'ㄱ':'c/4', 'ㄴ':'d/4', 'ㄷ':'e/4', 'ㄹ':'f/4',
+  'ㅁ':'g/4', 'ㅂ':'a/4', 'ㅅ':'b/4',
+  'ㅇ':'c/5', 'ㅈ':'d/5', 'ㅊ':'e/5',
+  'ㅋ':'f/5', 'ㅌ':'g/5', 'ㅍ':'a/5', 'ㅎ':'b/5'
+};
+const VOW_MAP = {
+  'ㅏ':'c/4', 'ㅑ':'d/4', 'ㅓ':'e/4', 'ㅕ':'f/4',
+  'ㅗ':'g/4', 'ㅛ':'a/4', 'ㅜ':'b/4',
+  'ㅠ':'c/5', 'ㅡ':'d/5', 'ㅣ':'e/5'
+};
+const CHO  = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+const JUNG = ['ㅏ','ㅐ','ㅑ','ㅒ','ㅓ','ㅔ','ㅕ','ㅖ','ㅗ','ㅘ','ㅙ','ㅚ','ㅛ','ㅜ','ㅝ','ㅞ','ㅟ','ㅠ','ㅡ','ㅢ','ㅣ'];
+const JONG = ['','ㄱ','ㄲ','ㄳ','ㄴ','ㄵ','ㄶ','ㄷ','ㄹ','ㄺ','ㄻ','ㄼ','ㄽ','ㄾ','ㄿ','ㅀ','ㅁ','ㅂ','ㅄ','ㅅ','ㅆ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+const JONG_NORM = {'ㄳ':'ㄱ','ㄵ':'ㄴ','ㄶ':'ㄴ','ㄺ':'ㄹ','ㄻ':'ㄹ','ㄼ':'ㄹ','ㄽ':'ㄹ','ㄾ':'ㄹ','ㄿ':'ㄹ','ㅀ':'ㄹ','ㅄ':'ㅂ','ㅆ':'ㅅ'};
+
+function decompose(str) {
+  const notes = [];
+  for (const ch of str) {
+    const code = ch.charCodeAt(0);
+    if (CONS_MAP[ch]) { notes.push({ pitch: CONS_MAP[ch], dur: 'h' }); continue; }
+    if (VOW_MAP[ch])  { notes.push({ pitch: VOW_MAP[ch],  dur: 'q' }); continue; }
+    if (code >= 0xAC00 && code <= 0xD7A3) {
+      const offset = code - 0xAC00;
+      const c = CHO[Math.floor(offset / (21 * 28))];
+      const v = JUNG[Math.floor((offset % (21 * 28)) / 28)];
+      const j = JONG[offset % 28];
+      if (CONS_MAP[c]) notes.push({ pitch: CONS_MAP[c], dur: 'h' });
+      if (VOW_MAP[v])  notes.push({ pitch: VOW_MAP[v],  dur: 'q' });
+      if (j) { const jn = JONG_NORM[j]||j; if (CONS_MAP[jn]) notes.push({ pitch: CONS_MAP[jn], dur: 'h' }); }
+    }
+  }
+  return notes;
+}
+
+function clearScore() {
+  document.getElementById('vf-output').innerHTML = '<p class="empty-msg">위에 입력하면 악보가 나타납니다</p>';
+}
+
+function render() {
+  const { Renderer, Stave, StaveNote, Voice, Formatter } = Vex.Flow;
+  const container = document.getElementById('vf-output');
+  container.innerHTML = '';
+
+  const raw = document.getElementById('inp').value.trim();
+  if (!raw) { clearScore(); return; }
+
+  const notes = decompose(raw);
+  if (!notes.length) { container.innerHTML = '<p class="empty-msg">인식된 음이 없습니다</p>'; return; }
+
+  const CLEF_W = 55;
+  const MAX_W  = 680;
+  const ROW_H  = 115;
+  const PAD    = 10;
+  const NOTE_W = 42;
+
+  // 한 줄에 들어갈 최대 음표 수
+  const maxPerRow = Math.floor((MAX_W - CLEF_W - PAD * 2) / NOTE_W);
+  const total = notes.length;
+
+  // 몇 줄이 필요한지 → 균등 분배
+  const numRows = Math.ceil(total / maxPerRow);
+  const perRow  = Math.ceil(total / numRows); // 균등하게 나눔
+
+  const rows = [];
+  for (let i = 0; i < total; i += perRow) {
+    rows.push(notes.slice(i, i + perRow));
+  }
+
+  const svgH = rows.length * ROW_H + 30;
+  const renderer = new Renderer(container, Renderer.Backends.SVG);
+  renderer.resize(MAX_W, svgH);
+  const ctx = renderer.getContext();
+
+  rows.forEach((rowNotes, ri) => {
+    const x = PAD;
+    const y = ri * ROW_H + 20;
+    const w = MAX_W - PAD * 2;
+
+    const stave = new Stave(x, y, w);
+    stave.addClef('treble'); // 모든 줄에 높은음자리표
+    stave.setContext(ctx).draw();
+
+    const vfNotes = rowNotes.map(({ pitch, dur }) =>
+      new StaveNote({ keys: [pitch], duration: dur })
+    );
+
+    const totalBeats = rowNotes.reduce((s, n) => s + (n.dur === 'h' ? 2 : 1), 0);
+    const voice = new Voice({ num_beats: totalBeats, beat_value: 4 });
+    voice.setStrict(false);
+    voice.addTickables(vfNotes);
+    new Formatter().joinVoices([voice]).format([voice], w - CLEF_W - 10);
+    voice.draw(ctx, stave);
+  });
+
+  const svgEl = container.querySelector('svg');
+  if (svgEl) {
+    svgEl.setAttribute('viewBox', `0 0 ${MAX_W} ${svgH}`);
+    svgEl.style.width = '100%';
+    svgEl.style.height = 'auto';
+  }
+  document.getElementById('save-tip').style.display = 'block';
+}
+
+function saveImage() {
+  const svgEl = document.querySelector('#vf-output svg');
+  if (!svgEl) { alert('먼저 악보를 생성해주세요'); return; }
+
+  // SVG를 canvas로 변환 후 PNG 다운로드
+  const svgData = new XMLSerializer().serializeToString(svgEl);
+  const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(svgBlob);
+
+  const img = new Image();
+  img.onload = () => {
+    const scale = 2; // 고해상도
+    const canvas = document.createElement('canvas');
+    canvas.width  = img.naturalWidth  * scale;
+    canvas.height = img.naturalHeight * scale;
+    const c = canvas.getContext('2d');
+    c.scale(scale, scale);
+    c.fillStyle = '#ffffff';
+    c.fillRect(0, 0, canvas.width, canvas.height);
+    c.drawImage(img, 0, 0);
+    URL.revokeObjectURL(url);
+
+    window.open(canvas.toDataURL('image/png'), '_blank');
+  };
+  img.src = url;
+}
+
+document.getElementById('inp').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); render(); }
+});
+</script>
+</body>
+</html>
